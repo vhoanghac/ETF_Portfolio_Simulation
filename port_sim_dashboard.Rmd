@@ -29,7 +29,7 @@ library(plotly)
 
 ```{r}
 # Load data
-data <- fread("data/tidied/full_data.csv")
+data <- data.table::fread("data/tidied/full_data.csv")
 ```
 
 Page 1
@@ -37,7 +37,7 @@ Page 1
 
 Column {.sidebar}
 -----------------------------------------------------------------------
-### Danh mục
+### Danh mục:
 ```{r}
 useShinyjs(rmd = TRUE)
 
@@ -48,7 +48,7 @@ div(style = "display: flex;",
       inputId = "picker_etf1",
       label   = "ETF 1:",
       choices = toupper(unique(data$symbol)),
-      selected = "E1VFVN30",
+      selected = "VN30",
       multiple = FALSE),
     numericInput(
       inputId = "weight_etf1",
@@ -68,7 +68,7 @@ div(style = "display: flex;",
       inputId = "picker_etf2",
       label   = "ETF 2:",
       choices = toupper(unique(data$symbol)),
-      selected = "DCDS",
+      selected = "MIDCAP",
       multiple = FALSE),
     
     numericInput(
@@ -98,7 +98,7 @@ pickerInput(
   inputId = "picker_etf",
   label   = h4("Các ETF:"),
   choices = toupper(unique(data$symbol)),
-  selected = c("E1VFVN30", "DCDS"),
+  selected = "VN30",
   multiple = TRUE,
   options = list(
     `actions-box` = TRUE,
@@ -109,20 +109,114 @@ pickerInput(
 
 output$picker_etf_values <- renderPrint(input$picker_etf)
 textOutput(outputId = "picker_etf_values")
+```
 
+
+```{r}
 # Apply Button:
 actionButton(inputId = "simulate", label = "Apply", icon = icon("play"))
 
 # Reset Button:
 actionButton(inputId = "reset_simulate", label = "Reset", icon = icon("sync"))
 
+observeEvent(eventExpr = input$reset_simulate, handlerExpr = {
+  
+  updatePickerInput(
+    session = session,
+    inputId = "picker_etf",
+    selected = "VN30")
+  
+  # Delay
+  delay(ms = 80, expr = {
+    click(id = "simulate")
+  })
+  
+})
+```
+
+```{r}
+# Sau khi click vào Apply thì lọc data theo tên của Input picker_etf
+
+# 
+# data_filtered <- data %>%
+#   filter(symbol %in% c("vn30", "midcap"))
+
+
+data_tbl <- eventReactive(
+
+  eventExpr = input$simulate,
+
+  valueExpr = {
+
+    # Lọc dữ liệu dựa theo input picker_etf
+    data_filtered <- data %>%
+      filter(symbol %in% c("vn30", "midcap"))
+
+    return(data_filtered)
+
+    },
+
+  ignoreNULL = FALSE
+
+  )
+
+reactive(data_tbl())
+
 ```
 
 Row
 -----------------------------------------------------------------------
-### Chart 1
+### Cumulative Returns Plot
     
 ```{r}
+# Chuẩn bị dữ liệu:
+
+# data_filtered %>%
+#   tidytable::mutate(growth = cumprod(1 + returns), .by = symbol) %>%
+# 
+#   tidytable::mutate(label_txt = str_glue("Date: {date}
+#                                            ETF: {toupper(symbol)}
+#                                            Lợi nhuận tích lũy: {scales::percent(growth - 1, accuracy = 0.1)}")) 
+
+
+cum_ret <- reactive({
+
+  data_tbl() %>%
+    tidytable::mutate(growth = cumprod(1 + returns), .by = symbol) %>%
+    tidytable::mutate(label_txt = str_glue("Date: {date}
+                                           ETF: {toupper(symbol)}
+                                           Lợi nhuận tích lũy: {scales::percent(growth - 1, accuracy = 0.1)}"))
+})
+
+
+# Output:
+output$plotly_cum_ret <- renderPlotly({
+  
+  p1 <- cum_ret() %>%
+
+    ggplot(aes(x = date,
+               y = growth,
+               color = symbol)) + theme_tq() +
+
+    geom_line(size = 0.7) +
+    geom_point(aes(text = label_txt), size = 0.5) +
+
+    expand_limits(y = 0.5) +
+    scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
+
+    geom_hline(yintercept = 1,
+               linetype   = "dashed",
+               color      = "#7A7574") +
+
+    labs(x = "",
+         y = "")
+  
+  ggplotly(p1, tooltip = "text")
+  
+  })
+
+# Plot
+plotlyOutput(outputId = "plotly_cum_ret")
 ```
     
 
