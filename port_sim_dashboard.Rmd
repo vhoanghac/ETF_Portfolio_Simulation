@@ -2,11 +2,14 @@
 title: "ETF Portfolio Simulation Dashboard"
 output: 
   flexdashboard::flex_dashboard:
+    navbar:
+      - { title: "Hướng Dẫn", href: "https://vohoanghac.com", align: left }
+    source_code: "https://github.com/vhoanghac/ETF_Portfolio_Simulation"
     theme:
       version: 4
       bootswatch: minty
     orientation: rows
-    vertical_layout: fill
+    vertical_layout: scroll
 runtime: shiny
 ---
 
@@ -31,12 +34,13 @@ library(plotly)
 ```{r}
 # Load data
 data <- fread("data/tidied/full_data.csv") %>% 
-  tidytable::mutate(date = as_date(date))
+  tidytable::mutate(date   = as_date(date),
+                    symbol = toupper(symbol))
 ```
 
 
 Sidebar {.sidebar}
-=====================================
+--------------------
 
 ### Danh mục:
 
@@ -44,89 +48,86 @@ Sidebar {.sidebar}
 useShinyjs(rmd = TRUE)
 
 # Input để chọn ETF 1
-
 div(style = "display: flex;",
+    
     pickerInput(
-      inputId = "picker_etf1",
-      label   = "ETF 1:",
-      choices = toupper(unique(data$symbol)),
+      inputId  = "picker_etf1",
+      label    = "ETF 1:",
+      choices  = unique(data$symbol),
       selected = "VN30",
       multiple = FALSE),
+    
     numericInput(
       inputId = "weight_etf1",
-      label = "Tỷ trọng:",
-      value = 0.5,
-      min = 0,
-      max = 1,
-      step = 0.1)
-    
+      label   = "Tỷ trọng:",
+      value   = 0.5,
+      min     = 0,
+      max     = 1,
+      step    = 0.05)
     )
-
     
 # Input để chọn ETF 2
 div(style = "display: flex;",
     
     pickerInput(
-      inputId = "picker_etf2",
-      label   = "ETF 2:",
-      choices = toupper(unique(data$symbol)),
+      inputId  = "picker_etf2",
+      label    = "ETF 2:",
+      choices  = unique(data$symbol),
       selected = "MIDCAP",
       multiple = FALSE),
     
     numericInput(
       inputId = "weight_etf2",
-      label = "Tỷ trọng:",
-      value = 0.5,
-      min = 0,
-      max = 1,
-      step = 0.1
+      label   = "Tỷ trọng:",
+      value   = 0.5,
+      min     = 0,
+      max     = 1,
+      step    = 0.05
       )
     )
-    
 
-output$picker_etf1_value <- renderPrint(input$picker_etf1)
-textOutput(outputId = "picker_etf1_value")
-
-output$picker_etf1_weight <- renderPrint(input$weight_etf1)
-textOutput(outputId = "picker_etf1_weight")
-
-
-output$picker_etf2_value <- renderPrint(input$picker_etf2)
-textOutput(outputId = "picker_etf2_value")
-output$picker_etf2_weight <- renderPrint(input$weight_etf2)
-textOutput(outputId = "picker_etf2_weight")
+# Input Rebalance
+awesomeRadio(
+  inputId  = "rebalance_on",
+  label    = "Tái cân bằng:",
+  choices  = "Hằng năm",
+  selected = "Hằng năm",
+  inline   = TRUE,
+  status   = "success"
+)
 
 ```
 
 ### So sánh với
 
 ```{r}
-
 # picker_etf de so sanh voi cac quy ETF khac
 
 pickerInput(
   inputId  = "picker_etf",
   label    = h4("Các ETF:"),
-  choices  = toupper(unique(data$symbol)),
+  choices  = unique(data$symbol),
   selected = "VN30",
   multiple = TRUE,
   options  = list(`actions-box`          = TRUE,
                   size                   = 10,
                   `selected-text-format` = "ETF")
 )
-
-output$picker_etf_values <- renderPrint(input$picker_etf)
-textOutput(outputId = "picker_etf_values")
 ```
 
 
 ```{r}
 # Apply Button:
-actionButton(inputId = "simulate", label = "Apply", icon = icon("play"))
+actionButton(inputId = "simulate", 
+             label   = "Apply", 
+             icon    = icon("play"))
 
 # Reset Button:
-actionButton(inputId = "reset_simulate", label = "Reset", icon = icon("sync"))
+actionButton(inputId = "reset_simulate", 
+             label   = "Reset",
+             icon    = icon("sync"))
 
+# Sau khi bấm nút reset thì trả về so sánh với ETF VN30
 observeEvent(eventExpr = input$reset_simulate, handlerExpr = {
   
   updatePickerInput(
@@ -135,7 +136,7 @@ observeEvent(eventExpr = input$reset_simulate, handlerExpr = {
     selected = "VN30")
   
   # Delay
-  delay(ms = 80, expr = {
+  delay(ms = 150, expr = {
     click(id = "simulate")
   })
   
@@ -143,12 +144,9 @@ observeEvent(eventExpr = input$reset_simulate, handlerExpr = {
 ```
 
 ```{r}
-# Sau khi click vào Apply thì lọc data theo tên của Input picker_etf
-
-# 
-# data_filtered <- data %>%
-#   filter(symbol %in% c("vn30", "midcap"))
-
+# MAIN event Reactive
+# Mọi dữ liệu trên dashboard đều tính toán từ data_tbl()
+# Sau khi click nút Apply thì lọc data theo tên của Input picker_etf
 
 data_tbl <- eventReactive(
 
@@ -160,32 +158,31 @@ data_tbl <- eventReactive(
     # Set thẳng tỷ trọng dựa theo symbol
     # Symbol:  input$picker_etf1 + input$picker_etf2
     # Weights: input$weight_etf1 + input$weight_etf2
-    weights_df <- tibble(symbol = c("vn30", "midcap"),
-                         weights = c(0.5, 0.5))
+    weights_df <- tibble(symbol  = c(input$picker_etf1, input$picker_etf2),
+                         weights = c(input$weight_etf1, input$weight_etf2))
     
-    # 2. Lập danh mục
+    # 2. Thiết lập danh mục
     portfolio <- data %>%
       
       # Filter dựa theo symbol
       # Symbol: input$picker_etf1 + input$picker_etf2
-      tidytable::filter(symbol %in% c("vn30", "midcap")) %>% 
+      tidytable::filter(symbol %in% c(input$picker_etf1, input$picker_etf2)) %>% 
       
       # Tính toán danh mục
-      # (?) Có nên tạo một input rebalance_on không?
       tq_portfolio(assets_col   = symbol,
                    returns_col  = returns,
                    weights      = weights_df,
                    col_rename   = "returns",
                    rebalance_on = "years") %>%   
       
-      tidytable::mutate(symbol = "portfolio") 
+      tidytable::mutate(symbol = "PORTFOLIO") 
     
     
     # 3. Gộp dữ liệu để so sánh portfolio với ETF
     # Symbol so sánh: input$picker_etf 
     data_combined <- portfolio %>% 
       bind_rows(data %>% 
-                  tidytable::filter(symbol %in% c("vn30")))
+                  tidytable::filter(symbol %in% c(input$picker_etf)))
     
 
     return(data_combined)
@@ -196,50 +193,84 @@ data_tbl <- eventReactive(
 
   )
 
-reactive(data_tbl())
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Lợi nhuận bình quân/năm (PORTFOLIO)
+
+```{r}
+# Lấy giá trị lợi nhuận
+ann_ret <- reactive({
+  
+  data_tbl() %>% 
+    tidytable::filter(symbol == "PORTFOLIO") %>% 
+    tq_performance(Ra              = returns,
+                   Rb              = NULL,
+                   performance_fun = Return.annualized) %>% 
+    pull(AnnualizedReturn) %>% 
+    scales::percent(accuracy = 0.1)
+
+})
+
+# Render ValueBox dựa vào giá trị lợi nhuận đã tính ở trên
+renderValueBox({
+  valueBox(ann_ret(), icon="fa-solid fa-percent", color = "success")
+})
 
 ```
 
-Lợi nhuận {data-icon="fa-dollar-sign"}
-=====================================  
+### Mức sụt giảm lớn nhất (PORTFOLIO)
+
+```{r}
+max_dd <- reactive({
+  
+  data_tbl() %>% 
+    tidytable::filter(symbol == "PORTFOLIO") %>% 
+    tq_performance(Ra              = returns,
+                   Rb              = NULL,
+                   performance_fun = maxDrawdown) %>% 
+    pull(maxDrawdown.1) %>% 
+    scales::percent(accuracy = 0.1)
+  
+})
+
+renderValueBox({
+  valueBox(max_dd(), icon="fa-solid fa-arrow-trend-down", color = "warning")
+})
+
+```
+
 
 Row
----------------------------------------------------------------
+--------------------
 
 ### Lợi nhuận tích lũy
     
 ```{r}
 # Chuẩn bị dữ liệu:
-
-# data_filtered %>%
-#   tidytable::mutate(growth = cumprod(1 + returns), .by = symbol) %>%
-# 
-#   tidytable::mutate(label_txt = str_glue("Date: {date}
-#                                            ETF: {toupper(symbol)}
-#                                            Lợi nhuận tích lũy: {scales::percent(growth - 1, accuracy = 0.1)}")) 
-
-
 cum_ret <- reactive({
 
   data_tbl() %>%
-    tidytable::mutate(growth = cumprod(1 + returns), .by = symbol) %>%
-    tidytable::mutate(label_txt = str_glue("Date: {date}
+    tidytable::mutate(growth    = cumprod(1 + returns), .by = symbol) %>%
+    tidytable::mutate(date_txt  = format(date, "%d-%m-%Y"),
+                      label_txt = str_glue("Ngày: {date_txt}
                                            ETF: {toupper(symbol)}
                                            Lợi nhuận tích lũy: {scales::percent(growth - 1, accuracy = 0.1)}"))
 })
-
 
 # Output:
 output$plotly_cum_ret <- renderPlotly({
   
   p1 <- cum_ret() %>%
 
-    ggplot(aes(x = date,
-               y = growth,
+    ggplot(aes(x     = date,
+               y     = growth,
                color = symbol)) + theme_tq() +
 
-    geom_line(size = 0.7) +
-    geom_point(aes(text = label_txt), size = 0.5) +
+    geom_line(linewidth = 0.5) +
+    geom_line(aes(text  = label_txt)) +
 
     expand_limits(y = 0.5) +
     scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
@@ -260,7 +291,7 @@ plotlyOutput(outputId = "plotly_cum_ret")
 ```
 
 Row
----------------------------------------------------------------
+--------------------
 
 ### Lợi nhuận quy năm theo chu kỳ nắm giữ
 
@@ -270,11 +301,7 @@ Row
 radioGroupButtons(
   inputId   = "time_period",
   label     = "Chu kỳ nắm giữ (Tháng)",
-  choices   = c(6, 
-              12,
-              24,
-              36,
-              48),
+  choices   = c(6, 12, 24, 36, 48),
   selected  = 12,
   status    = "primary",
   justified = TRUE,
@@ -289,28 +316,31 @@ radioGroupButtons(
 
 rolling_returns_tbl <- reactive({
   
-  # Time period : input$time_period
-  time_period <- as.integer(12)
+  time_period <- as.integer(input$time_period)
   
   # Tính rolling returns
   data_tbl() %>% 
-    group_by(symbol) %>% 
+    dplyr::group_by(symbol) %>% 
     
+    # Vì dữ liệu theo ngày nên
+    # Tính trung bình có 21 ngày giao dịch trong tháng
+    # Mỗi năm có 252 ngày
     tk_augment_slidify(.value = returns,
-                     .period = time_period * 30,
-                     .f = Return.annualized,
-                     scale = 252,
-                     .names = "roll_annr",
-                     .align = "right") %>% 
+                     .period  = time_period * 21,
+                     .f       = Return.annualized,
+                     scale    = 252,
+                     .names   = "roll_annr",
+                     .align   = "right") %>% 
     
-    mutate(date_2 = lag(date, n = time_period * 30)) %>% 
-    ungroup() %>% 
-    mutate(label_txt = str_glue("Ngày mua: {date_2}
-                                Giá trị tại: {date}
-                                ETF: {toupper(symbol)}
-                                Lợi nhuận quy năm: {scales::percent(roll_annr, accuracy = 0.1)}"))
+    dplyr::mutate(date_2 = lag(date, n = time_period * 21)) %>% 
+    dplyr::ungroup() %>% 
+    tidytable::mutate(date_txt   = format(date, "%d-%m-%Y"),
+                      date_2_txt = format(date_2, "%d-%m-%Y"),
+                      label_txt  = str_glue("Ngày mua: {date_2_txt}
+                                            Giá trị tại: {date_txt}
+                                            ETF: {toupper(symbol)}
+                                            Lợi nhuận mỗi năm: {scales::percent(roll_annr, accuracy = 0.1)}"))
 })
-
 
 # Output:
 output$plotly_rolling_returns <- renderPlotly({
@@ -320,14 +350,15 @@ output$plotly_rolling_returns <- renderPlotly({
                y     = roll_annr,
                color = symbol)) + theme_tq() + 
     
-    geom_line(size = 0.7) + 
-    geom_point(aes(text = label_txt), size = 0.5) +
+    geom_line(size = 0.5) + 
+    geom_line(aes(text = label_txt)) +
     
     geom_hline(yintercept = 0, 
                linetype   = "dashed", 
                color      = "#7A7574") +
     
     scale_y_continuous(labels = scales::percent_format()) +
+    
     scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
     
     labs(x = "",
@@ -338,16 +369,57 @@ output$plotly_rolling_returns <- renderPlotly({
   
 })
 
-
 # Plot
 plotlyOutput(outputId = "plotly_rolling_returns")
-
-
 ```
 
 
+Row
+--------------------
 
-Rủi ro {data-icon="fa-solid fa-fire"}
-=====================================  
+### Tỷ lệ sụt giảm so với đỉnh
 
-### Chart 1
+```{r}
+# Tính drawdown
+drawdown <- reactive({
+
+  data_tbl() %>%
+    tidytable::mutate(growth    = cumprod(1 + returns) - 1,
+                      maxgrowth = cummax(growth + 1),
+                      drawdown  = (growth + 1) / maxgrowth - 1,
+                      .by       = symbol) %>% 
+    tidytable::mutate(label_txt = str_glue("Mức sụt giảm: {scales::percent(drawdown, accuracy = 0.1)}"))
+})
+
+# Output
+
+output$plotly_drawdown <- renderPlotly({
+  
+  p3 <- drawdown() %>% 
+    ggplot(aes(x     = date,
+               y     = drawdown,
+               color = symbol)) + theme_tq() + 
+    
+    geom_line(linewidth = 0.5) + 
+    geom_point(aes(text = label_txt), size = 0.1) +
+    
+    geom_hline(yintercept = 0, 
+               linetype   = "dashed", 
+               color      = "#7A7574") +
+    
+    facet_wrap(~symbol, ncol = 2) +
+    
+    scale_y_continuous(labels = scales::percent_format()) +
+    scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
+    
+    labs(x = "",
+         y = "")
+  
+  ggplotly(p3, tooltip = "text") %>% 
+    layout(margin = list(b = 120)) 
+  
+})
+
+# Plot
+plotlyOutput(outputId = "plotly_drawdown")
+```
