@@ -19,6 +19,7 @@ library(shinyjs)
 # Core
 library(tidyverse)
 library(tidyquant)
+library(timetk)
 library(data.table)
 library(tidytable)
 library(scales)
@@ -33,12 +34,12 @@ data <- fread("data/tidied/full_data.csv") %>%
   tidytable::mutate(date = as_date(date))
 ```
 
-Page 1
-===================================== 
 
-Column {.sidebar}
------------------------------------------------------------------------
+Sidebar {.sidebar}
+=====================================
+
 ### Danh mục:
+
 ```{r}
 useShinyjs(rmd = TRUE)
 
@@ -199,9 +200,13 @@ reactive(data_tbl())
 
 ```
 
+Lợi nhuận {data-icon="fa-dollar-sign"}
+=====================================  
+
 Row
------------------------------------------------------------------------
-### Cumulative Returns Plot
+---------------------------------------------------------------
+
+### Lợi nhuận tích lũy
     
 ```{r}
 # Chuẩn bị dữ liệu:
@@ -253,26 +258,96 @@ output$plotly_cum_ret <- renderPlotly({
 # Plot
 plotlyOutput(outputId = "plotly_cum_ret")
 ```
-    
 
-   
-Page 2 {data-icon="fa-hashtag"}
-=====================================     
+Row
+---------------------------------------------------------------
 
-
-Column {.sidebar}
------------------------------------------------------------------------
+### Lợi nhuận quy năm theo chu kỳ nắm giữ
 
 ```{r}
-useShinyjs(rmd = TRUE)
+# Quãng thời gian tính rolling annualized returns
 
-# Input để chọn ETF
-pickerInput(
-  inputId = "picker_etf",
-  label   = h4("TEST ETF:"),
-  choices = toupper(unique(data$symbol)),
-  selected = "E1VFVN30",
-  multiple = FALSE
+radioGroupButtons(
+  inputId   = "time_period",
+  label     = "Chu kỳ nắm giữ (Tháng)",
+  choices   = c(6, 
+              12,
+              24,
+              36,
+              48),
+  selected  = 12,
+  status    = "primary",
+  justified = TRUE,
+  checkIcon = list(
+    yes = icon("ok", lib = "glyphicon"))
 )
+```
+
+```{r}
+
+# Tính rolling annualized returns:
+
+rolling_returns_tbl <- reactive({
+  
+  # Time period : input$time_period
+  time_period <- as.integer(12)
+  
+  # Tính rolling returns
+  data_tbl() %>% 
+    group_by(symbol) %>% 
+    
+    tk_augment_slidify(.value = returns,
+                     .period = time_period * 30,
+                     .f = Return.annualized,
+                     scale = 252,
+                     .names = "roll_annr",
+                     .align = "right") %>% 
+    
+    mutate(date_2 = lag(date, n = time_period * 30)) %>% 
+    ungroup() %>% 
+    mutate(label_txt = str_glue("Ngày mua: {date_2}
+                                Giá trị tại: {date}
+                                ETF: {toupper(symbol)}
+                                Lợi nhuận quy năm: {scales::percent(roll_annr, accuracy = 0.1)}"))
+})
+
+
+# Output:
+output$plotly_rolling_returns <- renderPlotly({
+  
+  p2 <- rolling_returns_tbl() %>% 
+    ggplot(aes(x     = date,
+               y     = roll_annr,
+               color = symbol)) + theme_tq() + 
+    
+    geom_line(size = 0.7) + 
+    geom_point(aes(text = label_txt), size = 0.5) +
+    
+    geom_hline(yintercept = 0, 
+               linetype   = "dashed", 
+               color      = "#7A7574") +
+    
+    scale_y_continuous(labels = scales::percent_format()) +
+    scale_x_date(breaks = scales::pretty_breaks(n = 10)) +
+    
+    labs(x = "",
+         y = "")
+  
+  ggplotly(p2, tooltip = "text") %>% 
+    layout(margin = list(b = 120)) 
+  
+})
+
+
+# Plot
+plotlyOutput(outputId = "plotly_rolling_returns")
+
 
 ```
+
+
+
+Rủi ro {data-icon="fa-solid fa-fire"}
+=====================================  
+
+### Chart 1
