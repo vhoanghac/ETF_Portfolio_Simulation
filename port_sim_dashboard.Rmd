@@ -29,7 +29,8 @@ library(plotly)
 
 ```{r}
 # Load data
-data <- data.table::fread("data/tidied/full_data.csv")
+data <- fread("data/tidied/full_data.csv") %>% 
+  tidytable::mutate(date = as_date(date))
 ```
 
 Page 1
@@ -89,22 +90,28 @@ output$picker_etf1_weight <- renderPrint(input$weight_etf1)
 textOutput(outputId = "picker_etf1_weight")
 
 
+output$picker_etf2_value <- renderPrint(input$picker_etf2)
+textOutput(outputId = "picker_etf2_value")
+output$picker_etf2_weight <- renderPrint(input$weight_etf2)
+textOutput(outputId = "picker_etf2_weight")
+
 ```
 
 ### So sánh với
 
 ```{r}
+
+# picker_etf de so sanh voi cac quy ETF khac
+
 pickerInput(
-  inputId = "picker_etf",
-  label   = h4("Các ETF:"),
-  choices = toupper(unique(data$symbol)),
+  inputId  = "picker_etf",
+  label    = h4("Các ETF:"),
+  choices  = toupper(unique(data$symbol)),
   selected = "VN30",
   multiple = TRUE,
-  options = list(
-    `actions-box` = TRUE,
-    size = 10,
-    `selected-text-format` = "ETF"
-  )
+  options  = list(`actions-box`          = TRUE,
+                  size                   = 10,
+                  `selected-text-format` = "ETF")
 )
 
 output$picker_etf_values <- renderPrint(input$picker_etf)
@@ -122,8 +129,8 @@ actionButton(inputId = "reset_simulate", label = "Reset", icon = icon("sync"))
 observeEvent(eventExpr = input$reset_simulate, handlerExpr = {
   
   updatePickerInput(
-    session = session,
-    inputId = "picker_etf",
+    session  = session,
+    inputId  = "picker_etf",
     selected = "VN30")
   
   # Delay
@@ -148,11 +155,39 @@ data_tbl <- eventReactive(
 
   valueExpr = {
 
-    # Lọc dữ liệu dựa theo input picker_etf
-    data_filtered <- data %>%
-      filter(symbol %in% c("vn30", "midcap"))
+    # 1. Thiết lập tỷ trọng ETF
+    # Set thẳng tỷ trọng dựa theo symbol
+    # Symbol:  input$picker_etf1 + input$picker_etf2
+    # Weights: input$weight_etf1 + input$weight_etf2
+    weights_df <- tibble(symbol = c("vn30", "midcap"),
+                         weights = c(0.5, 0.5))
+    
+    # 2. Lập danh mục
+    portfolio <- data %>%
+      
+      # Filter dựa theo symbol
+      # Symbol: input$picker_etf1 + input$picker_etf2
+      tidytable::filter(symbol %in% c("vn30", "midcap")) %>% 
+      
+      # Tính toán danh mục
+      # (?) Có nên tạo một input rebalance_on không?
+      tq_portfolio(assets_col   = symbol,
+                   returns_col  = returns,
+                   weights      = weights_df,
+                   col_rename   = "returns",
+                   rebalance_on = "years") %>%   
+      
+      tidytable::mutate(symbol = "portfolio") 
+    
+    
+    # 3. Gộp dữ liệu để so sánh portfolio với ETF
+    # Symbol so sánh: input$picker_etf 
+    data_combined <- portfolio %>% 
+      bind_rows(data %>% 
+                  tidytable::filter(symbol %in% c("vn30")))
+    
 
-    return(data_filtered)
+    return(data_combined)
 
     },
 
