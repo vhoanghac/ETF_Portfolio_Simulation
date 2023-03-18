@@ -29,11 +29,14 @@ library(scales)
 
 # Interactive Visualizations
 library(plotly)
+
+# Load data
+library(fst)
 ```
 
 ```{r}
 # Load data
-data <- fread("data/tidied/full_data.csv") %>% 
+data <- read.fst("data/tidied/full_data.fst") %>% 
   tidytable::mutate(date   = as_date(date),
                     symbol = toupper(symbol))
 ```
@@ -256,7 +259,7 @@ cum_ret <- reactive({
     tidytable::mutate(growth    = cumprod(1 + returns), .by = symbol) %>%
     tidytable::mutate(date_txt  = format(date, "%d-%m-%Y"),
                       label_txt = str_glue("Ngày: {date_txt}
-                                           ETF: {toupper(symbol)}
+                                           ETF: {symbol}
                                            Lợi nhuận tích lũy: {scales::percent(growth - 1, accuracy = 0.1)}"))
 })
 
@@ -288,6 +291,68 @@ output$plotly_cum_ret <- renderPlotly({
 
 # Plot
 plotlyOutput(outputId = "plotly_cum_ret")
+```
+
+Row
+--------------------
+
+### Hiệu suất theo năm
+
+```{r}
+yearly_ret <- reactive({
+  data_tbl() %>% 
+    tidytable::mutate(year     = floor(year(date))) %>% 
+    tidytable::mutate(year_ret = cumprod(1 + returns) - 1,
+                      .by      = c(year, symbol)) %>% 
+    
+    # Để dễ dàng cho việc chọn dữ liệu, đặt tên "ret_" trước mỗi column
+    pivot_wider(names_from     = symbol,
+                values_from    = year_ret, date,
+                names_prefix   = "ret_") %>% 
+    
+    tidytable::mutate(year = as.factor(floor(year(date)))) %>% 
+    
+    # Bằng cách này có thể chọn nhiều column khi user lựa chọn nhiều quỹ
+    tidytable::summarise(across(starts_with("ret_"), ~last(.)),
+                         .by = year) %>% 
+    # Sau khi chọn xong thì xóa prefix
+    rename_all(~str_remove(., "^ret_")) %>% 
+    
+    tidytable::filter(year != "2023") %>% 
+    pivot_longer(names_to   = "symbol",
+                 values_to  = "returns", !year) 
+  
+})
+
+#Output
+
+output$plotly_yearly_ret <- renderPlotly({
+
+
+  p2 <- yearly_ret() %>%
+    ggplot(aes(x = year, 
+               y = returns, 
+               fill = symbol)) + theme_tq() + 
+    
+    geom_bar(stat = "identity", position = "dodge",
+             aes(text = paste("Năm: ", year,
+                              "<br>", "ETF: ", symbol,
+                              "<br>", "Hiệu suất: ", round(returns * 100, 2), "%")),
+             hoverinfo = "text") +
+    expand_limits(y = 0.5) +
+    scale_y_continuous(labels = scales::percent_format()) +
+    
+    labs(x = "",
+         y = "")
+  
+  ggplotly(p2, tooltip = "text")
+
+})
+
+
+# Plot
+plotlyOutput(outputId = "plotly_yearly_ret")
+
 ```
 
 Row
@@ -338,14 +403,14 @@ rolling_returns_tbl <- reactive({
                       date_2_txt = format(date_2, "%d-%m-%Y"),
                       label_txt  = str_glue("Ngày mua: {date_2_txt}
                                             Giá trị tại: {date_txt}
-                                            ETF: {toupper(symbol)}
+                                            ETF: {symbol}
                                             Lợi nhuận mỗi năm: {scales::percent(roll_annr, accuracy = 0.1)}"))
 })
 
 # Output:
 output$plotly_rolling_returns <- renderPlotly({
   
-  p2 <- rolling_returns_tbl() %>% 
+  p3 <- rolling_returns_tbl() %>% 
     ggplot(aes(x     = date,
                y     = roll_annr,
                color = symbol)) + theme_tq() + 
@@ -364,7 +429,7 @@ output$plotly_rolling_returns <- renderPlotly({
     labs(x = "",
          y = "")
   
-  ggplotly(p2, tooltip = "text") %>% 
+  ggplotly(p3, tooltip = "text") %>% 
     layout(margin = list(b = 120)) 
   
 })
@@ -395,12 +460,13 @@ drawdown <- reactive({
 
 output$plotly_drawdown <- renderPlotly({
   
-  p3 <- drawdown() %>% 
+  p4 <- drawdown() %>% 
     ggplot(aes(x     = date,
                y     = drawdown,
                color = symbol)) + theme_tq() + 
     
     geom_line(linewidth = 0.5) + 
+    
     geom_point(aes(text = label_txt), size = 0.1) +
     
     geom_hline(yintercept = 0, 
@@ -415,8 +481,7 @@ output$plotly_drawdown <- renderPlotly({
     labs(x = "",
          y = "")
   
-  ggplotly(p3, tooltip = "text") %>% 
-    layout(margin = list(b = 120)) 
+  ggplotly(p4, tooltip = "text")
   
 })
 
